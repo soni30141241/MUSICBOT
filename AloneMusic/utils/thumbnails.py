@@ -171,7 +171,7 @@ async def get_thumb(videoid):
 
         draw.text(
             (30, 680),
-            text="AloneMusic",
+            text="MesooMusic",
             fill="white",
             font=font_watermark,
             stroke_width=1,
