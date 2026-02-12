@@ -1,33 +1,19 @@
-#
-# Copyright (C) 2021-2022 by TheAloneteam@Github, < https://github.com/TheAloneTeam >.
-#
-# This file is part of < https://github.com/TheAloneTeam/AloneMusic > project,
-# and is released under the "GNU v3.0 License Agreement".
-# Please see < https://github.com/TheAloneTeam/AloneMusic/blob/master/LICENSE >
-#
-# All rights reserved.
-
-import asyncio
-import json
 import os
-import random
 import re
-from typing import Union
-from urllib.parse import quote_plus, urlparse
-
-import aiohttp
+import json
 import yt_dlp
-from py_yt import VideosSearch
+import random
+import logging
+import aiohttp
+import asyncio
+from typing import Union
 from pyrogram.enums import MessageEntityType
 from pyrogram.types import Message
+from py_yt import VideosSearch, Playlist
+from AviaxMusic.utils.database import is_on_off
+from AviaxMusic.utils.formatters import time_to_seconds
 
-from AloneMusic.utils.database import is_on_off
-from AloneMusic.utils.formatters import time_to_seconds
-
-API_URL = "https://kartik.opusx.workers.dev/yt"
-DOWNLOAD_FOLDER = "downloads"
-CHUNK_SIZE = 8192  # don't chnge this value
-RETRIES = 6  # you may increase if error arises for some yt videos
+from config import API_URL, VIDEO_API_URL, API_KEY
 
 
 def cookie_txt_file():
@@ -41,140 +27,169 @@ def cookie_txt_file():
     return cookie_file
 
 
-async def _fetch_json_aio(
-    session: aiohttp.ClientSession,
-    url: str,
-    retries: int = RETRIES,
-    timeout: float = 30.0,
-):
-    backoff = 1
-    for attempt in range(retries):
-        try:
-            async with session.get(url, timeout=timeout) as resp:
-                if resp.status == 200:
-                    return await resp.json()
-                else:
-                    pass
-        except Exception:
-            pass
-        if attempt < retries - 1:
-            await asyncio.sleep(backoff)
-            backoff = min(backoff * 2, 16)
-    return None
+async def download_song(link: str):
+    video_id = link.split('v=')[-1].split('&')[0]
 
+    download_folder = "downloads"
+    for ext in ["mp3", "m4a", "webm"]:
+        file_path = f"{download_folder}/{video_id}.{ext}"
+        if os.path.exists(file_path):
+            return file_path
+        
+    song_url = f"{API_URL}/song/{video_id}?api={API_KEY}"
+    async with aiohttp.ClientSession() as session:
+        for attempt in range(10):
+            try:
+                async with session.get(song_url) as response:
+                    if response.status != 200:
+                        raise Exception(f"API request failed with status code {response.status}")
+                
+                    data = await response.json()
+                    status = data.get("status", "").lower()
 
-async def _download_stream_aio(
-    session: aiohttp.ClientSession, url: str, dest_path: str, retries: int = RETRIES
-):
-    backoff = 1
-    for attempt in range(retries):
+                    if status == "done":
+                        download_url = data.get("link")
+                        if not download_url:
+                            raise Exception("API response did not provide a download URL.")
+                        break
+                    elif status == "downloading":
+                        await asyncio.sleep(4)
+                    else:
+                        error_msg = data.get("error") or data.get("message") or f"Unexpected status '{status}'"
+                        raise Exception(f"API error: {error_msg}")
+            except Exception as e:
+                print(f"[FAIL] {e}")
+                return None
+        else:
+            print("⏱️ Max retries reached. Still downloading...")
+            return None
+    
+
         try:
-            async with session.get(url, timeout=None) as resp:
-                if resp.status != 200:
-                    raise Exception(f"status {resp.status}")
-                os.makedirs(os.path.dirname(dest_path), exist_ok=True)
-                with open(dest_path, "wb") as f:
+            file_format = data.get("format", "mp3")
+            file_extension = file_format.lower()
+            file_name = f"{video_id}.{file_extension}"
+            download_folder = "downloads"
+            os.makedirs(download_folder, exist_ok=True)
+            file_path = os.path.join(download_folder, file_name)
+
+            async with session.get(download_url) as file_response:
+                with open(file_path, 'wb') as f:
                     while True:
-                        chunk = await resp.content.read(CHUNK_SIZE)
+                        chunk = await file_response.content.read(8192)
                         if not chunk:
                             break
                         f.write(chunk)
-                return True
-        except Exception:
-            if attempt < retries - 1:
-                await asyncio.sleep(backoff)
-                backoff = min(backoff * 2, 16)
-            else:
-                return False
-
-
-async def download_song(link: str):
-    video_id = link.split("v=")[-1].split("&")[0]
-    for ext in ["mp3", "m4a", "webm"]:
-        file_path = f"{DOWNLOAD_FOLDER}/{video_id}.{ext}"
-        if os.path.exists(file_path):
-            return file_path
-    format_param = "mp3"
-    api_url = f"{API_URL}?url={quote_plus(link)}&type=audio&format={format_param}"
-    async with aiohttp.ClientSession() as session:
-        data = await _fetch_json_aio(session, api_url)
-        if not data:
+                return file_path
+        except aiohttp.ClientError as e:
+            print(f"Network or client error occurred while downloading: {e}")
             return None
-        success = data.get("success", False)
-        if not success:
+        except Exception as e:
+            print(f"Error occurred while downloading song: {e}")
             return None
-        download_url = data.get("download_url")
-        if not download_url:
-            return None
-        file_extension = format_param
-        if file_extension == "opus":
-            file_extension = "m4a"
-        file_name = f"{video_id}.{file_extension}"
-        file_path = os.path.join(DOWNLOAD_FOLDER, file_name)
-        ok = await _download_stream_aio(session, download_url, file_path)
-        return file_path if ok else None
-
+    return None
 
 async def download_video(link: str):
-    video_id = link.split("v=")[-1].split("&")[0]
+    video_id = link.split('v=')[-1].split('&')[0]
+
+    download_folder = "downloads"
     for ext in ["mp4", "webm", "mkv"]:
-        file_path = f"{DOWNLOAD_FOLDER}/{video_id}.{ext}"
+        file_path = f"{download_folder}/{video_id}.{ext}"
         if os.path.exists(file_path):
             return file_path
-    format_param = "mp4"
-    api_url = f"{API_URL}?url={quote_plus(link)}&type=video&format={format_param}"
+        
+    video_url = f"{VIDEO_API_URL}/video/{video_id}?api={API_KEY}"
     async with aiohttp.ClientSession() as session:
-        data = await _fetch_json_aio(session, api_url)
-        if not data:
-            return None
-        success = data.get("success", False)
-        if not success:
-            return None
-        download_url = data.get("download_url")
-        if not download_url:
-            return None
-        file_extension = "mp4"
-        file_name = f"{video_id}.{file_extension}"
-        file_path = os.path.join(DOWNLOAD_FOLDER, file_name)
-        ok = await _download_stream_aio(session, download_url, file_path)
-        return file_path if ok else None
+        for attempt in range(10):
+            try:
+                async with session.get(video_url) as response:
+                    if response.status != 200:
+                        raise Exception(f"API request failed with status code {response.status}")
+                
+                    data = await response.json()
+                    status = data.get("status", "").lower()
 
+                    if status == "done":
+                        download_url = data.get("link")
+                        if not download_url:
+                            raise Exception("API response did not provide a download URL.")
+                        break
+                    elif status == "downloading":
+                        await asyncio.sleep(8)
+                    else:
+                        error_msg = data.get("error") or data.get("message") or f"Unexpected status '{status}'"
+                        raise Exception(f"API error: {error_msg}")
+            except Exception as e:
+                print(f"[FAIL] {e}")
+                return None
+        else:
+            print("⏱️ Max retries reached. Still downloading...")
+            return None
+    
+
+        try:
+            file_format = data.get("format", "mp4")
+            file_extension = file_format.lower()
+            file_name = f"{video_id}.{file_extension}"
+            download_folder = "downloads"
+            os.makedirs(download_folder, exist_ok=True)
+            file_path = os.path.join(download_folder, file_name)
+
+            async with session.get(download_url) as file_response:
+                with open(file_path, 'wb') as f:
+                    while True:
+                        chunk = await file_response.content.read(8192)
+                        if not chunk:
+                            break
+                        f.write(chunk)
+                return file_path
+        except aiohttp.ClientError as e:
+            print(f"Network or client error occurred while downloading: {e}")
+            return None
+        except Exception as e:
+            print(f"Error occurred while downloading video: {e}")
+            return None
+    return None
 
 async def check_file_size(link):
     async def get_format_info(link):
         cookie_file = cookie_txt_file()
         if not cookie_file:
+            print("No cookies found. Cannot check file size.")
             return None
+            
         proc = await asyncio.create_subprocess_exec(
             "yt-dlp",
-            "--cookies",
-            cookie_file,
+            "--cookies", cookie_file,
             "-J",
             link,
             stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
         )
         stdout, stderr = await proc.communicate()
         if proc.returncode != 0:
+            print(f'Error:\n{stderr.decode()}')
             return None
         return json.loads(stdout.decode())
 
     def parse_size(formats):
         total_size = 0
         for format in formats:
-            if "filesize" in format and format["filesize"]:
-                total_size += format["filesize"]
+            if 'filesize' in format:
+                total_size += format['filesize']
         return total_size
 
     info = await get_format_info(link)
     if info is None:
         return None
-    formats = info.get("formats", [])
+    
+    formats = info.get('formats', [])
     if not formats:
+        print("No formats found.")
         return None
+    
     total_size = parse_size(formats)
     return total_size
-
 
 async def shell_cmd(cmd):
     proc = await asyncio.create_subprocess_shell(
@@ -229,7 +244,10 @@ class YouTubeAPI:
                         return entity.url
         if offset in (None,):
             return None
-        return text[offset : offset + length]
+        umm = text[offset : offset + length]
+        if "?si=" in umm:
+            umm = umm.split("?si=")[0]
+        return umm
 
     async def details(self, link: str, videoid: Union[bool, str] = None):
         if videoid:
@@ -283,19 +301,23 @@ class YouTubeAPI:
             link = self.base + link
         if "&" in link:
             link = link.split("&")[0]
+        
+        # Try video API first
         try:
             downloaded_file = await download_video(link)
             if downloaded_file:
                 return 1, downloaded_file
         except Exception as e:
             print(f"Video API failed: {e}")
+        
+        # Fallback to cookies
         cookie_file = cookie_txt_file()
         if not cookie_file:
             return 0, "No cookies found. Cannot download video."
+            
         proc = await asyncio.create_subprocess_exec(
             "yt-dlp",
-            "--cookies",
-            cookie_file,
+            "--cookies", cookie_file,
             "-g",
             "-f",
             "best[height<=?720][width<=?1280]",
@@ -312,25 +334,21 @@ class YouTubeAPI:
     async def playlist(self, link, limit, user_id, videoid: Union[bool, str] = None):
         if videoid:
             link = self.listbase + link
-        if "&" in link:
-            link = link.split("&")[0]
-        parsed_link = urlparse(link)
-        if parsed_link.hostname == "music.youtube.com":
-            link = link.replace("music.youtube.com", "www.youtube.com", 1)
-        cookie_file = cookie_txt_file()
-        if not cookie_file:
-            return []
-        playlist = await shell_cmd(
-            f"yt-dlp -i --get-id --flat-playlist --cookies {cookie_file} --playlist-end {limit} --skip-download {link}"
-        )
         try:
-            result = playlist.split("\n")
-            for key in result:
-                if key == "":
-                    result.remove(key)
+            plist = await Playlist.get(link)
         except:
-            result = []
-        return result
+            return []
+
+        videos = plist.get("videos") or []
+        ids: list[str] = []
+        for data in videos[:limit]:
+            if not data:
+                continue
+            vid = data.get("id")
+            if not vid:
+                continue
+            ids.append(vid)
+        return ids
 
     async def track(self, link: str, videoid: Union[bool, str] = None):
         if videoid:
@@ -358,10 +376,12 @@ class YouTubeAPI:
             link = self.base + link
         if "&" in link:
             link = link.split("&")[0]
+        
         cookie_file = cookie_txt_file()
         if not cookie_file:
             return [], link
-        ytdl_opts = {"quiet": True, "cookiefile": cookie_file}
+            
+        ytdl_opts = {"quiet": True, "cookiefile" : cookie_file}
         ydl = yt_dlp.YoutubeDL(ytdl_opts)
         with ydl:
             formats_available = []
@@ -371,7 +391,7 @@ class YouTubeAPI:
                     str(format["format"])
                 except:
                     continue
-                if "dash" not in str(format["format"]).lower():
+                if not "dash" in str(format["format"]).lower():
                     try:
                         format["format"]
                         format["filesize"]
@@ -383,10 +403,10 @@ class YouTubeAPI:
                     formats_available.append(
                         {
                             "format": format["format"],
-                            "filesize": format.get("filesize"),
+                            "filesize": format["filesize"],
                             "format_id": format["format_id"],
                             "ext": format["ext"],
-                            "format_note": format.get("format_note"),
+                            "format_note": format["format_note"],
                             "yturl": link,
                         }
                     )
@@ -424,18 +444,18 @@ class YouTubeAPI:
         if videoid:
             link = self.base + link
         loop = asyncio.get_running_loop()
-
         def audio_dl():
             cookie_file = cookie_txt_file()
             if not cookie_file:
                 raise Exception("No cookies found. Cannot download audio.")
+                
             ydl_optssx = {
                 "format": "bestaudio/best",
                 "outtmpl": "downloads/%(id)s.%(ext)s",
                 "geo_bypass": True,
                 "nocheckcertificate": True,
                 "quiet": True,
-                "cookiefile": cookie_file,
+                "cookiefile" : cookie_file,
                 "no_warnings": True,
             }
             x = yt_dlp.YoutubeDL(ydl_optssx)
@@ -450,13 +470,14 @@ class YouTubeAPI:
             cookie_file = cookie_txt_file()
             if not cookie_file:
                 raise Exception("No cookies found. Cannot download video.")
+                
             ydl_optssx = {
                 "format": "(bestvideo[height<=?720][width<=?1280][ext=mp4])+(bestaudio[ext=m4a])",
                 "outtmpl": "downloads/%(id)s.%(ext)s",
                 "geo_bypass": True,
                 "nocheckcertificate": True,
                 "quiet": True,
-                "cookiefile": cookie_file,
+                "cookiefile" : cookie_file,
                 "no_warnings": True,
             }
             x = yt_dlp.YoutubeDL(ydl_optssx)
@@ -471,6 +492,7 @@ class YouTubeAPI:
             cookie_file = cookie_txt_file()
             if not cookie_file:
                 raise Exception("No cookies found. Cannot download song video.")
+                
             formats = f"{format_id}+140"
             fpath = f"downloads/{title}"
             ydl_optssx = {
@@ -480,7 +502,7 @@ class YouTubeAPI:
                 "nocheckcertificate": True,
                 "quiet": True,
                 "no_warnings": True,
-                "cookiefile": cookie_file,
+                "cookiefile" : cookie_file,
                 "prefer_ffmpeg": True,
                 "merge_output_format": "mp4",
             }
@@ -491,6 +513,7 @@ class YouTubeAPI:
             cookie_file = cookie_txt_file()
             if not cookie_file:
                 raise Exception("No cookies found. Cannot download song audio.")
+                
             fpath = f"downloads/{title}.%(ext)s"
             ydl_optssx = {
                 "format": format_id,
@@ -499,7 +522,7 @@ class YouTubeAPI:
                 "nocheckcertificate": True,
                 "quiet": True,
                 "no_warnings": True,
-                "cookiefile": cookie_file,
+                "cookiefile" : cookie_file,
                 "prefer_ffmpeg": True,
                 "postprocessors": [
                     {
@@ -521,6 +544,7 @@ class YouTubeAPI:
             fpath = f"downloads/{link}.mp3"
             return fpath
         elif video:
+            # Try video API first
             try:
                 downloaded_file = await download_video(link)
                 if downloaded_file:
@@ -528,17 +552,20 @@ class YouTubeAPI:
                     return downloaded_file, direct
             except Exception as e:
                 print(f"Video API failed: {e}")
+            
+            # Fallback to cookies
             cookie_file = cookie_txt_file()
             if not cookie_file:
+                print("No cookies found. Cannot download video.")
                 return None, None
+
             if await is_on_off(1):
                 direct = True
                 downloaded_file = await download_song(link)
             else:
                 proc = await asyncio.create_subprocess_exec(
                     "yt-dlp",
-                    "--cookies",
-                    cookie_file,
+                    "--cookies", cookie_file,
                     "-g",
                     "-f",
                     "best[height<=?720][width<=?1280]",
@@ -551,14 +578,16 @@ class YouTubeAPI:
                     downloaded_file = stdout.decode().split("\n")[0]
                     direct = False
                 else:
-                    file_size = await check_file_size(link)
-                    if not file_size:
-                        return None, None
-                    total_size_mb = file_size / (1024 * 1024)
-                    if total_size_mb > 250:
-                        return None, None
-                    direct = True
-                    downloaded_file = await loop.run_in_executor(None, video_dl)
+                   file_size = await check_file_size(link)
+                   if not file_size:
+                     print("None file Size")
+                     return None, None
+                   total_size_mb = file_size / (1024 * 1024)
+                   if total_size_mb > 250:
+                     print(f"File size {total_size_mb:.2f} MB exceeds the 100MB limit.")
+                     return None, None
+                   direct = True
+                   downloaded_file = await loop.run_in_executor(None, video_dl)
         else:
             direct = True
             downloaded_file = await download_song(link)
