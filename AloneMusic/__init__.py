@@ -21,7 +21,9 @@ heroku()
 app = Alone()
 userbot = Userbot()
 
-from .platforms import *
+from .platforms import (Apple, Carbon, Resso, Soundcloud, Spotify, Telegram,
+                        Youtube)
+
 
 Apple = Apple.AppleAPI()
 Carbon = Carbon.CarbonAPI()
