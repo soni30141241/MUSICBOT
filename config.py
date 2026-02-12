@@ -42,9 +42,9 @@ HEROKU_APP_NAME = getenv("HEROKU_APP_NAME")
 # Get it from http://dashboard.heroku.com/account
 HEROKU_API_KEY = getenv("HEROKU_API_KEY")
 
-# Vars For API End Pont.
-YTPROXY_URL = getenv("YTPROXY_URL", 'https://tgapi.xbitcode.com') ## xBit Music Endpoint.
-YT_API_KEY = getenv("YT_API_KEY" , None ) ## Your API key like: xbit_10000000xx0233 Get from  https://t.me/tgmusic_apibot
+API_URL = getenv("API_URL", 'https://api.nexgenbots.xyz') #youtube song url
+VIDEO_API_URL = getenv("VIDEO_API_URL", 'https://api.video.nexgenbots.xyz')
+API_KEY = getenv("API_KEY", None) # youtube song api key, generate free key or buy paid plan from https://console.nexgenbots.xyz
 
 UPSTREAM_REPO = getenv(
     "UPSTREAM_REPO",
