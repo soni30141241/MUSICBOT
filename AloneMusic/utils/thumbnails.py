@@ -132,8 +132,8 @@ async def get_thumb(videoid):
         # Duration bar with auto color from thumbnail
         draw.line((150, 660, 1130, 660), width=6, fill=bar_color)
         # Recreation Music text at right side of center thumbnail
-        rec_font = safe_font("OpusV/resources/font.ttf", 40)
-        rec_text = "Recreation Music"
+        rec_font = safe_font("AloneMusic/assets/font.ttf", 40)
+        rec_text = "MESSO MUSIC"
         bbox = draw.textbbox((0, 0), rec_text, font=rec_font)
         rec_text_w = bbox[2] - bbox[0]
         rec_text_h = bbox[3] - bbox[1]
