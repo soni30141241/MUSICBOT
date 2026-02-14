@@ -14,7 +14,7 @@ from PIL import (
     ImageFilter,
     ImageFont,
 )
-from youtubesearchpython.__future__ import VideosSearch
+from py_yt import VideosSearch
 from config import YOUTUBE_IMG_URL
 def changeImageSize(maxWidth, maxHeight, image):
     widthRatio = maxWidth / image.size[0]
@@ -116,9 +116,9 @@ async def get_thumb(videoid):
                 return ImageFont.truetype(path, size)
             except:
                 return ImageFont.load_default()
-        font = safe_font("OpusV/resources/font.ttf", 30)
-        font2 = safe_font("OpusV/resources/font.ttf", 30)
-        arial = safe_font("OpusV/resources/font2.ttf", 30)
+        font = safe_font("AloneMusic/assets/font.ttf", 30)
+        font2 = safe_font("AloneMusic/assets/font.ttf", 30)
+        arial = safe_font("AloneMusic/assets/font2.ttf", 30)
         # Draw text
         draw = ImageDraw.Draw(background)
         # Channel | Views
