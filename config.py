@@ -24,7 +24,7 @@ BOT_TOKEN = getenv("BOT_TOKEN")
 # Get your mongo url from cloud.mongodb.com
 MONGO_DB_URI = getenv("MONGO_DB_URI", None)
 
-DURATION_LIMIT_MIN = int(getenv("DURATION_LIMIT", 600))
+DURATION_LIMIT_MIN = int(getenv("DURATION_LIMIT", 18000))
 
 # Set this to true if you want post ads automatically
 ADS_MODE = getenv("ADS_MODE", None)
@@ -55,8 +55,8 @@ GIT_TOKEN = getenv(
     "GIT_TOKEN", None
 )  # Fill this variable if your upstream repository is private
 
-SUPPORT_CHANNEL = getenv("SUPPORT_CHANNEL", "https://t.me/+hyjl0Mp7DzU4NTA1")
-SUPPORT_CHAT = getenv("SUPPORT_CHAT", "https://t.me/biomute_bot")
+SUPPORT_CHANNEL = getenv("SUPPORT_CHANNEL", "https://t.me/messo_network")
+SUPPORT_CHAT = getenv("SUPPORT_CHAT", "https://t.me/messo_network")
 
 # Set this to True if you want the assistant to automatically leave chats after an interval
 AUTO_LEAVING_ASSISTANT = bool(getenv("AUTO_LEAVING_ASSISTANT", None))
@@ -95,11 +95,11 @@ confirmer = {}
 
 START_IMG_URL = getenv(
     "START_IMG_URL",
-    "https://files.catbox.moe/34xlvu.jpg",
+    "https://files.catbox.moe/38tth5.jpg",
 )
 PING_IMG_URL = getenv(
     "PING_IMG_URL",
-    "https://files.catbox.moe/34xlvu.jpg",
+    "https://files.catbox.moe/l7gc2l.jpg",
 )
 PLAYLIST_IMG_URL = "https://files.catbox.moe/34xlvu.jpg"
 STATS_IMG_URL = "https://files.catbox.moe/34xlvu.jpg"
